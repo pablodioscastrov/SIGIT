@@ -76,7 +76,7 @@
     <dependency>
       <groupId>org.apache.poi</groupId>
       <artifactId>poi-ooxml</artifactId>
-      <version>5.2.5</version>
+      <version>6.0.0</version>
     </dependency>
 
     <!-- Spring Security + JWT + RBAC (ADR-005, TD-007, TD-008) -->
