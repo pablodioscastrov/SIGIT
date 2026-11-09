@@ -1,0 +1,665 @@
+/*
+ * Sistema visual inspirado en las guías de diseño de Apple (`.claude/skills/apple-design`),
+ * adaptado a lo que este stack puede hacer sin librerías nuevas (ADR-010: sin
+ * librería de UI, sin dependencias sin justificación concreta):
+ *
+ * - Tipografía con tracking/leading dependientes del tamaño (sección 15 de la skill).
+ * - Materiales translúcidos con profundidad para la barra de navegación y los
+ *   diálogos (sección 12) vía `backdrop-filter`, sin JS adicional.
+ * - Feedback instantáneo al presionar, no al soltar (sección 1).
+ * - Curvas de easing "spring-like" en CSS puro (aproximación honesta: sin una
+ *   librería de física real como Motion, no hay velocidad/interrupción real —
+ *   solo la sensación de asentamiento con rebote mínimo que da una buena curva
+ *   cúbica-bézier, sección 4).
+ * - `prefers-reduced-motion`/`prefers-contrast` respetados en cada animación
+ *   nueva (sección 14).
+ *
+ * Deliberadamente fuera de alcance: gestos de arrastre, "rubber-banding",
+ * proyección de momentum y haptics (secciones 2, 3, 5, 6, 9, 13) — esta es una
+ * aplicación de gestión con tablas y formularios, no una superficie táctil con
+ * contenido arrastrable; adoptar esas secciones sin un caso de uso real sería
+ * complejidad sin beneficio.
+ */
+:root {
+  font-family: -apple-system, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+  color-scheme: light;
+
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-translucent: rgba(255, 255, 255, 0.72);
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --border: #d2d2d7;
+  --border-strong: #c7c7cc;
+
+  --accent: #0071e3;
+  --accent-pressed: #0059b3;
+  --danger: #d70015;
+
+  /* Azul marino profundo, derivado del mismo matiz que --accent pero
+   * oscurecido para una superficie grande (la barra de módulos) — sobrio y
+   * "de marca" en vez de plano gris o del acento a pantalla completa, que
+   * resultaría demasiado intenso en una franja tan ancha. */
+  --nav-bg: #0a1f3d;
+  --nav-text: rgba(255, 255, 255, 0.72);
+  --nav-text-hover: #ffffff;
+  --nav-hover-bg: rgba(255, 255, 255, 0.08);
+
+  /* Radios generosos y consistentes — "continuous corner" en vez de esquinas duras. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.18), 0 8px 20px rgba(0, 0, 0, 0.08);
+
+  /* Aproximación CSS de un muelle críticamente amortiguado (damping ~1.0). */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 120ms;
+  --duration-base: 240ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: #86868b;
+    --muted: #3a3a3c;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.75rem;
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: -0.02em; /* tracking negativo en texto grande, sección 15 */
+}
+
+h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+/*
+ * Cabecera en dos franjas (ajuste explícito de aspecto profesional y
+ * simetría): antes, identidad/sesión y el menú de módulos competían por el
+ * mismo renglón y se envolvían de forma impredecible en cuanto no cabían
+ * (la sesión terminaba flotando arriba a la derecha, desalineada del menú
+ * que caía debajo) — un patrón de dos franjas ya común en paneles de
+ * administración separa con claridad "quién soy / dónde estoy" (franja
+ * superior) de "a qué módulo voy" (franja de navegación), cada una con su
+ * propio eje de simetría en vez de competir por el mismo espacio.
+ */
+.app__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  /* Material translúcido: el contenido se desplaza por debajo (sección 12). */
+  background: var(--surface-translucent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.app__header-top {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.7rem 1.5rem;
+}
+
+/*
+ * Enlaces de navegación fuera de la barra superior ("Volver a…", "Ver
+ * comprobante", "Unidades de medida"): antes sin regla propia, se quedaban
+ * con el azul/subrayado por defecto del navegador, en contraste con el
+ * resto del sistema visual. Un único color de acento consistente en toda
+ * la aplicación (ajuste general de atractivo/simetría pedido explícitamente).
+ */
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+.app__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+  font-size: 0.98rem;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Isotipo mínimo (dos iniciales en un cuadro de acento): le da a la marca un
+ * ancla visual propia en vez de ser solo texto corrido, sin necesitar un
+ * archivo de imagen ni una librería de iconos nueva (ADR-010). */
+.app__brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+/*
+ * Franja de navegación propia, separada de la identidad/sesión (ajuste
+ * explícito de color pedido sobre el diseño de dos franjas ya aprobado):
+ * un color sólido (`--nav-bg`, azul marino derivado del mismo matiz que
+ * `--accent`) le da al menú de módulos su propia identidad visual — clara,
+ * pero sin repetir literalmente el azul de acento de botones/enlaces, que
+ * queda reservado para lo interactivo dentro del contenido. `justify-content:
+ * center` reparte el espacio sobrante en partes iguales a ambos lados del
+ * grupo de módulos en vez de dejarlo pegado a la izquierda con un vacío
+ * asimétrico a la derecha.
+ */
+.app__nav-bar {
+  background: var(--nav-bg);
+}
+.app__nav-bar ul {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 1.5rem;
+}
+/*
+ * Mismo padding vertical/horizontal en los once ítems (activo o no) los
+ * vuelve simétricos entre sí sin importar el largo del texto ("Alertas" vs.
+ * "Transferencias"): misma altura y forma, solo cambia el ancho según el
+ * contenido.
+ */
+.app__nav-bar a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.42rem 0.9rem;
+  border-radius: var(--radius-pill);
+  text-decoration: none;
+  color: var(--nav-text);
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: color var(--duration-fast) var(--ease-spring), background var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+.app__nav-bar a:hover { color: var(--nav-text-hover); background: var(--nav-hover-bg); }
+/* Pastilla blanca rellena (en vez del acento azul) para que el módulo activo
+ * destaque con el máximo contraste posible sobre el fondo marino, con el
+ * propio azul de acento como color de texto — sigue leyéndose como "lo
+ * seleccionado", coherente con el resto de la app, sin perderse contra un
+ * fondo ya azul. */
+.app__nav-bar a[aria-current="page"] {
+  color: var(--accent);
+  font-weight: 600;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+.app__session { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; }
+.app__content { max-width: 960px; margin: 2rem auto; padding: 0 1.5rem; }
+
+/* Botón de menú (☰): solo existe visualmente en pantallas angostas, ver media query más abajo. */
+.app__menu-toggle {
+  display: none;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: none;
+  flex-shrink: 0;
+}
+
+/*
+ * Responsive: por debajo de este ancho, la barra de once ítems ya no cabe en
+ * una fila (ni siquiera envolviendo, sección de diseño móvil pedida
+ * explícitamente) — el menú pasa a un panel colapsable que se abre con el
+ * botón ☰, en vez de forzar un header de varias líneas siempre visible.
+ */
+@media (max-width: 720px) {
+  .app__header-top { padding: 0.75rem 1rem; gap: 0.75rem; }
+  .app__brand { font-size: 0.92rem; }
+  .app__brand-mark { width: 1.65rem; height: 1.65rem; }
+  .app__menu-toggle { display: inline-flex; }
+  /* El fondo marino se conserva al desplegarse (a diferencia de un fix
+   * anterior que lo quitaba): el texto de los ítems está pensado para verse
+   * sobre `--nav-bg`, no sobre el fondo claro de la página. */
+  .app__nav-bar { display: none; }
+  .app__nav-bar[data-open="true"] { display: block; }
+  .app__nav-bar ul { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 0.1rem; padding: 0.35rem 1rem 0.6rem; }
+  .app__nav-bar a { width: 100%; padding: 0.6rem 0.75rem; }
+  .app__session { margin-left: auto; font-size: 0.85rem; }
+  .app__session span { display: none; }
+
+  .app__content { padding: 0 1rem; margin: 1.25rem auto; }
+
+  .page__header { gap: 0.75rem; }
+  .page__header h1 { font-size: 1.4rem; }
+  .page__actions { width: 100%; }
+  .page__actions button { flex: 1 1 auto; }
+
+  .filters { gap: 0.75rem; }
+  .filters .field { flex: 1 1 10rem; }
+
+  .modal__backdrop { padding: 0; align-items: stretch; }
+  .modal { width: 100%; min-height: 100%; padding: 1.25rem; border-radius: 0; }
+
+  .panel { padding: 1rem; }
+
+  .receipt-inputs { flex-wrap: wrap; }
+
+  th, td { padding: 0.55rem 0.6rem; font-size: 0.92rem; }
+
+  .pagination { flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; }
+
+  .conflict-banner { flex-direction: column; align-items: stretch; }
+
+  .dashboard-panel__columns { grid-template-columns: 1fr; }
+}
+
+/* Login: tarjeta centrada horizontal y verticalmente, no un bloque a la izquierda con margen superior. */
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.login__card {
+  width: min(24rem, 100%);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 2.25rem 2rem;
+}
+.login__brand {
+  margin: 0 0 0.35rem;
+  text-align: center;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+}
+.login__card h1 {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+.login__card form { display: flex; flex-direction: column; }
+/* Color/hover ya los da la regla general de `button[type="submit"]`; aquí solo el espaciado propio del login. */
+.login__submit { margin-top: 0.5rem; padding: 0.7rem 1.1rem; }
+
+.field { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1rem; }
+.field__error { color: var(--danger); font-size: 0.85rem; }
+
+.field__password-wrapper { position: relative; display: flex; }
+.field__password-wrapper input { flex: 1; padding-right: 4.5rem; }
+.field__password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  padding: 0.3rem 0.6rem;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.field__password-toggle:hover:not([disabled]) { color: var(--text); border-color: transparent; }
+
+/*
+ * Un único rectángulo de formulario para input/select/textarea, sin importar
+ * si viven dentro de `.field` o sueltos en una celda de tabla (líneas de
+ * venta/compra, filtros) — antes solo `.field select`/`.field textarea`
+ * tenían este tratamiento y un `<select>` suelto se quedaba con el estilo
+ * nativo del navegador, de tamaño y color distintos al resto del formulario.
+ */
+input, select, textarea {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+/*
+ * `appearance: auto` (por defecto) hace que el navegador dibuje su propio
+ * cuadro de `<select>` con flecha e "chrome" nativo — mismo padding/borde
+ * que un input, pero ~2px más alto y con un color de flecha que no sigue la
+ * paleta de la aplicación (pedido explícito: mismo tamaño y color que las
+ * cajas de texto). `appearance: none` + una flecha propia por
+ * `background-image` iguala la altura exacta y da una flecha del mismo
+ * `--muted` que el resto de la tipografía secundaria.
+ */
+select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%236e6e73' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.5 8l4.5 4.5L14.5 8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 0.85rem;
+}
+select::-ms-expand { display: none; }
+
+/*
+ * Checkbox con el mismo lenguaje visual que inputs/selects (ajuste de
+ * simetría pedido explícitamente): sin esto, un `<input type="checkbox">`
+ * hereda el `padding`/borde de la regla general de arriba pero los ignora
+ * (una casilla nativa no respeta `padding` como una caja de texto) y sigue
+ * dibujando el cuadrado nativo del sistema operativo — ni el tamaño ni el
+ * color quedan bajo control de la aplicación. `appearance: none` + un
+ * tamaño y borde propios, con relleno de acento y un check propio al
+ * marcarse, es lo mismo que ya se hizo para `<select>` con su flecha nativa.
+ */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  cursor: pointer;
+  position: relative;
+  vertical-align: middle;
+  flex-shrink: 0;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+input[type="checkbox"]:hover:not([disabled]) { border-color: var(--border-strong); }
+input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.18);
+}
+
+button {
+  padding: 0.55rem 1.1rem;
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  transition: transform var(--duration-fast) var(--ease-spring),
+    border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+button:hover:not([disabled]) { border-color: var(--border-strong); }
+/* Feedback al presionar, no al soltar (sección 1) — instantáneo, sin retraso. */
+button:active:not([disabled]) { transform: scale(0.97); }
+button[disabled] { opacity: 0.5; cursor: default; transform: none; }
+
+/*
+ * Jerarquía visual de botones (ajuste general de atractivo/simetría pedido
+ * explícitamente): antes todo botón —"Guardar" de un formulario, "Nuevo
+ * producto" en el encabezado, "Cancelar"— se veía exactamente igual, sin
+ * distinguir la acción principal de cada pantalla. Sin tocar cada página:
+ * por convención ya existente en todo el código, el único <button> dentro
+ * de `.page__header`/`.page__actions` es siempre la acción de creación de
+ * esa pantalla, y el único `type="submit"` dentro de un formulario es
+ * siempre su acción principal (mismo criterio que ya usaba `.login__submit`).
+ */
+button[type="submit"]:not(.button--danger),
+.page__header button,
+.page__actions button {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+button[type="submit"]:not(.button--danger):hover:not([disabled]),
+.page__header button:hover:not([disabled]),
+.page__actions button:hover:not([disabled]) {
+  background: var(--accent-pressed);
+  border-color: var(--accent-pressed);
+}
+
+.row__actions button {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.state { padding: 1rem 0; color: var(--muted); }
+.state--error { color: var(--danger); }
+.state__hint { font-size: 0.85rem; color: var(--muted); }
+
+/*
+ * Tabla como tarjeta (ajuste general de atractivo/simetría pedido
+ * explícitamente): antes flotaba directamente sobre el fondo de la página,
+ * sin borde ni profundidad — visualmente plana frente al resto de
+ * superficies (`.modal`, `.panel`, `.login__card`) que ya usan `--surface`
+ * más sombra. `border-collapse: separate` + `overflow: hidden` es lo que
+ * permite redondear las esquinas sin perder el borde inferior por celda.
+ */
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+caption { text-align: left; color: var(--muted); font-size: 0.9rem; padding-bottom: 0.5rem; }
+th, td { text-align: left; padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--border); }
+th { font-weight: 600; color: var(--muted); font-size: 0.85rem; text-transform: none; background: rgba(0, 0, 0, 0.02); }
+tbody tr { transition: background var(--duration-fast) ease; }
+tbody tr:nth-child(even) { background: rgba(0, 0, 0, 0.012); }
+tbody tr:hover { background: rgba(0, 0, 0, 0.035); }
+tbody tr:last-child td { border-bottom: none; }
+.th-sort { background: none; border: none; padding: 0; font: inherit; font-weight: inherit; color: inherit; cursor: pointer; }
+.th-sort:hover { text-decoration: underline; }
+
+/*
+ * Ajuste explícito de simetría: en Logística, "Resumen" (9 columnas) y "Por
+ * ruta" (11 columnas) viven una debajo de la otra y deberían verse parejas,
+ * pero con `table-layout: auto` (por defecto) una tabla puede crecer más
+ * allá de su `width: 100%` cuando el contenido lo exige — con más columnas y
+ * texto más largo (nombres de ruta, clasificación), "Por ruta" terminaba
+ * ~80px más ancha que "Resumen" y que el resto de la página (medido con
+ * `getBoundingClientRect`: 992px contra 912px). `table-layout: fixed` fuerza
+ * a respetar ese 100% de forma estricta en vez de desbordarlo.
+ */
+.table-fixed { table-layout: fixed; }
+
+.page__header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.page__header h1 { margin-right: auto; }
+.page__actions { display: flex; align-items: center; gap: 1rem; }
+
+.filters { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; margin: 1rem 0; }
+.filters .field { margin-bottom: 0; }
+.field--check label { display: flex; align-items: center; gap: 0.5rem; }
+
+/*
+ * NO `display: flex` aquí (ajuste de simetría pedido explícitamente): esta
+ * clase vive directamente en un `<td>`. `display: flex` le cambia el modo de
+ * caja de `table-cell` a flex, y una celda flex deja de estirarse a la altura
+ * de su fila — se queda con el alto de su propio contenido, más bajo que las
+ * filas donde otra columna hace wrap a dos líneas (nombre largo, sucursal,
+ * proveedor…). El resultado visible: la columna de acciones "flota" más
+ * arriba que el resto de esa fila, dando a la tabla un aspecto irregular en
+ * vez de una cuadrícula pareja. `white-space: nowrap` + separación por
+ * margen entre hijos logra el mismo renglón de botones sin salir del modelo
+ * de tabla, dejando que la celda sí ocupe el alto completo de su fila.
+ */
+.row__actions { white-space: nowrap; }
+.row__actions > * { vertical-align: middle; }
+.row__actions > * + * { margin-left: 0.5rem; }
+
+/*
+ * Grupo de acciones de Usuarios: esta fila suma hasta tres botones
+ * (Editar/Desactivar-Activar/Eliminar), pedido explícitamente en una sola
+ * línea horizontal (no en dos líneas). En una sola línea sin más, esos
+ * botones empujaban la tabla ~15px más allá del ancho de `.app__content`
+ * (912px) y forzaban un scroll horizontal innecesario. En vez de doblar los
+ * botones a una segunda línea, se libera ese espacio dejando que la columna
+ * Correo —la otra que fuerza ancho, por ser una cadena sin espacios que de
+ * otro modo nunca se parte— se doble con `.cell-break` (ver más abajo). No
+ * se usa `display: flex` directamente en el `<td>` (ver nota de
+ * `.row__actions` más abajo, altura de fila); el flex vive en un `<div>`
+ * interno para no perder el `table-cell` que estira la celda a la altura
+ * completa de la fila.
+ */
+.row__actions-group { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.5rem; }
+
+/* Permite partir cadenas sin espacios (correos) que de otro modo forzarían el ancho de la tabla. */
+.cell-break { overflow-wrap: anywhere; }
+.pagination { display: flex; gap: 1rem; align-items: center; padding: 1rem 0; color: var(--muted); font-size: 0.9rem; }
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.65rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.01em; /* tracking ligeramente positivo en texto pequeño, sección 15 */
+  border: 1px solid var(--border);
+}
+.badge--ok { background: #ecfdf5; border-color: #a7f3d0; color: #067647; }
+.badge--warn { background: #fffbeb; border-color: #fcd34d; color: #92660a; }
+.badge--muted { background: #f4f4f5; color: var(--muted); }
+
+.button--danger { border-color: var(--danger); color: var(--danger); }
+.button--danger:hover:not([disabled]) { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+/*
+ * Bug reportado explícitamente: el diálogo aparecía tapado por `.app__header`
+ * (`position: sticky`, `z-index: 10`). `.modal__backdrop` no tenía ningún
+ * `z-index` propio — con `z-index: auto`, un elemento posicionado sin
+ * `z-index` pinta por debajo de cualquier otro con `z-index` explícito en el
+ * mismo contexto de apilamiento, sin importar el orden en el DOM. Un
+ * `z-index` bien por encima del header resuelve esto para cualquier diálogo
+ * de la aplicación, no solo el de "Nuevo producto".
+ *
+ * <p>Centrado verticalmente (pedido explícito) con `align-items: safe center`:
+ * a diferencia de `center` a secas, si el diálogo es más alto que la
+ * ventana, degrada a alinear arriba en vez de recortar el borde superior
+ * fuera de la vista — sigue siendo desplazable gracias a `overflow-y: auto`.
+ */
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-start;
+  align-items: safe center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 2rem 1rem;
+  animation: modal-scrim-in var(--duration-base) ease;
+}
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  width: min(38rem, 100%);
+  box-shadow: var(--shadow-lg);
+  /* "Materializa", no solo aparece (sección 12): entra con una leve escala. */
+  animation: modal-in var(--duration-base) var(--ease-spring);
+  transform-origin: top center;
+}
+.modal__title { margin-top: 0; }
+.modal__actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
+
+@keyframes modal-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal, .modal__backdrop { animation: none; }
+}
+
+.form__error { color: var(--danger); margin: 1rem 0; }
+.form__error p { margin: 0.25rem 0; }
+.panel { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.5rem; margin-top: 2rem; background: var(--surface); }
+
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; margin: 1rem 0 1.5rem; }
+.detail-grid dt { font-size: 0.8rem; color: var(--muted); margin: 0; }
+.detail-grid dd { margin: 0; font-size: 1rem; }
+
+.receipt-inputs { display: flex; gap: 0.5rem; }
+.receipt-inputs input { width: 6rem; }
+
+.sale-total { margin: 1rem 0; font-size: 1.1rem; }
+
+.conflict-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.75rem 1rem; margin: 1rem 0;
+  border: 1px solid #fcd34d; background: #fffbeb; border-radius: var(--radius-md);
+}
+.conflict-banner p { margin: 0; }
+
+.timeline { list-style: none; padding: 0; margin: 1rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.timeline__step { display: flex; flex-direction: column; padding: 0.5rem 0.75rem; border-left: 3px solid var(--border); color: var(--muted); }
+.timeline__step--done { border-left-color: #22c55e; color: var(--text); }
+.timeline__label { font-weight: 600; }
+.timeline__at { font-size: 0.9rem; }
+
+fieldset { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.75rem 1rem; margin: 1rem 0; }
+.radio-option { display: block; margin: 0.5rem 0; }
+
+.dashboard-panel { margin-bottom: 1.5rem; }
+.dashboard-panel__columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.5rem; }
+
+.mini-bar-chart { width: 100%; max-width: 32rem; height: auto; }
+.mini-bar-chart__bar { fill: var(--muted); }
+.mini-bar-chart__value { font-size: 9px; fill: var(--text); }
+.mini-bar-chart__label { font-size: 9px; fill: var(--muted); }

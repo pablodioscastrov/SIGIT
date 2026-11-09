@@ -1,0 +1,11 @@
+import { useEffect, useState } from "react";
+
+/** Evita una petición por pulsación en los campos de búsqueda. */
+export function useDebouncedValue<T>(value: T, delayMs = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(id);
+  }, [value, delayMs]);
+  return debounced;
+}

@@ -1,0 +1,826 @@
+openapi: 3.0.3
+info:
+  title: Sistema de Inventario Multi-Sucursal API
+  version: "1.0.0"
+  description: >
+    Especificación OpenAPI inicial y representativa de la API REST v1.
+    No es exhaustiva: cubre autenticación, el formato uniforme de errores,
+    y los recursos/acciones de mayor riesgo de negocio (inventario, ajustes,
+    compras + recepción, ventas, transferencias + acciones de transición,
+    alertas de stock y un endpoint de dashboard de muestra). Ver
+    docs/API_DESIGN.md sección 10 para el detalle del alcance y para el resto
+    de endpoints de gestión (CRUD simple de sucursales, usuarios, proveedores,
+    listas de precios, rutas) no incluidos aquí todavía.
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+  - name: inventory
+  - name: purchases
+  - name: sales
+  - name: transfers
+  - name: dashboard
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Autenticar usuario y obtener JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Autenticación exitosa
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+                  expiresIn: { type: integer, description: "segundos hasta expirar" }
+                  user: { $ref: "#/components/schemas/UserSummary" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Perfil del usuario autenticado
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserSummary" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /inventory:
+    get:
+      tags: [inventory]
+      summary: Consultar stock por producto y sucursal (RF-002, RF-003, RF-006)
+      parameters:
+        - { name: branchId, in: query, schema: { type: string } }
+        - { name: productId, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: lowStock, in: query, schema: { type: boolean } }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageMeta"
+                  - type: object
+                    properties:
+                      content:
+                        type: array
+                        items: { $ref: "#/components/schemas/Inventory" }
+
+  /inventory/{id}:
+    get:
+      tags: [inventory]
+      summary: Detalle de una fila de stock
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Inventory" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /inventory-movements:
+    get:
+      tags: [inventory]
+      summary: Ledger de movimientos de inventario (RF-009, BR-001)
+      parameters:
+        - { name: branchId, in: query, schema: { type: string } }
+        - { name: productId, in: query, schema: { type: string } }
+        - { name: reason, in: query, schema: { type: string } }
+        - { name: dateFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: dateTo, in: query, schema: { type: string, format: date-time } }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageMeta"
+                  - type: object
+                    properties:
+                      content:
+                        type: array
+                        items: { $ref: "#/components/schemas/InventoryMovement" }
+
+  /inventory/adjustments:
+    post:
+      tags: [inventory]
+      summary: Ajuste manual de inventario (flujo G, BR-023)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InventoryAdjustmentRequest" }
+      responses:
+        "201":
+          description: Ajuste aplicado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InventoryMovement" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /stock-alerts:
+    get:
+      tags: [inventory]
+      summary: Alertas de stock mínimo (RF-010, RF-036)
+      parameters:
+        - { name: branchId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, RESOLVED] } }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageMeta"
+                  - type: object
+                    properties:
+                      content:
+                        type: array
+                        items: { $ref: "#/components/schemas/StockAlert" }
+
+  /purchase-orders:
+    post:
+      tags: [purchases]
+      summary: Crear orden de compra (RF-012, RF-013)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PurchaseOrderCreateRequest" }
+      responses:
+        "201":
+          description: Orden creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseOrder" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /purchase-orders/{id}:
+    get:
+      tags: [purchases]
+      summary: Detalle de orden de compra con sus líneas
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseOrder" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /purchase-orders/{id}/receipts:
+    post:
+      tags: [purchases]
+      summary: Confirmar recepción total o parcial (flujo B, RF-014, RF-016, BR-003, BR-004)
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PurchaseReceiptRequest" }
+      responses:
+        "200":
+          description: Recepción aplicada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PurchaseReceiptResponse" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /sales:
+    post:
+      tags: [sales]
+      summary: Registrar y confirmar una venta (flujo A, RF-017 a RF-021)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaleCreateRequest" }
+      responses:
+        "201":
+          description: Venta confirmada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sale" }
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /sales/{id}:
+    get:
+      tags: [sales]
+      summary: Detalle de una venta
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sale" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /transfers:
+    post:
+      tags: [transfers]
+      summary: Solicitar una transferencia (flujo C1, RF-022)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransferCreateRequest" }
+      responses:
+        "201":
+          description: Solicitud creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /transfers/{id}:
+    get:
+      tags: [transfers]
+      summary: Detalle de una transferencia con sus líneas
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /transfers/{id}/approve:
+    post:
+      tags: [transfers]
+      summary: Aprobar la solicitud, con ajuste opcional de cantidad (flujo C2, RF-023, BR-005)
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransferApproveRequest" }
+      responses:
+        "200":
+          description: Transferencia aprobada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /transfers/{id}/reject:
+    post:
+      tags: [transfers]
+      summary: Rechazar la solicitud
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Transferencia rechazada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /transfers/{id}/dispatch:
+    post:
+      tags: [transfers]
+      summary: Despachar todas las líneas en un único evento de envío (flujo D, RF-024, BR-013)
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransferDispatchRequest" }
+      responses:
+        "200":
+          description: Transferencia despachada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /transfers/{id}/receive:
+    post:
+      tags: [transfers]
+      summary: Confirmar recepción de una o más líneas, total o parcial (flujos E y F1, RF-025, RF-026)
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransferReceiveRequest" }
+      responses:
+        "200":
+          description: Recepción registrada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /transfers/{id}/items/{itemId}/discrepancy-treatment:
+    post:
+      tags: [transfers]
+      summary: Definir tratamiento del faltante de una línea (flujo F2, RF-026, BR-009)
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DiscrepancyTreatmentRequest" }
+      responses:
+        "200":
+          description: Tratamiento aplicado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transferItemId: { type: string }
+                  discrepancyTreatment: { type: string, enum: [REENVIO, AJUSTE, RECLAMACION] }
+                  followUpTransferId: { type: string, nullable: true }
+                  transferStatus: { type: string }
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /dashboard/sales-summary:
+    get:
+      tags: [dashboard]
+      summary: Ventas del mes en curso vs. meses anteriores (RF-031)
+      parameters:
+        - { name: branchId, in: query, required: true, schema: { type: string } }
+        - { name: months, in: query, schema: { type: integer, default: 3 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branchId: { type: string }
+                  currentMonth:
+                    type: object
+                    properties:
+                      period: { type: string, example: "2026-08" }
+                      totalSales: { type: number }
+                  previousMonths:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        period: { type: string, example: "2026-07" }
+                        totalSales: { type: number }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, default: 0, minimum: 0 }
+    Size:
+      name: size
+      in: query
+      schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+      description: >
+        Obligatorio en operaciones de creación repetible (categoría 2,
+        docs/CRITICAL_FLOWS.md sección 1.1). El cliente genera el UUID una
+        sola vez por acción de usuario y lo reenvía igual en cualquier
+        reintento automático.
+
+  responses:
+    BadRequest:
+      description: Payload estructuralmente inválido
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: JWT ausente o inválido
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Estado del recurso impide la operación (transición inválida, ya aplicada, conflicto de concurrencia)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnprocessableEntity:
+      description: Violación de una regla de negocio semántica
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: "STOCK_INSUFICIENTE" }
+            message: { type: string }
+            status: { type: integer }
+            requestId: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+
+    UserSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [ADMIN, MANAGER, OPERATOR] }
+        branchId: { type: string, nullable: true }
+
+    Inventory:
+      type: object
+      properties:
+        id: { type: string }
+        productId: { type: string }
+        branchId: { type: string }
+        quantityOnHand: { type: number }
+        averageUnitCost: { type: number }
+        minimumStock: { type: number }
+        updatedAt: { type: string, format: date-time }
+
+    InventoryMovement:
+      type: object
+      properties:
+        id: { type: string }
+        productId: { type: string }
+        branchId: { type: string }
+        direction: { type: string, enum: [INGRESO, RETIRO] }
+        reason:
+          type: string
+          enum: [COMPRA, DEVOLUCION, AJUSTE_INGRESO, VENTA, MERMA, AJUSTE_RETIRO, TRANSFERENCIA_SALIDA, TRANSFERENCIA_ENTRADA]
+        quantity: { type: number }
+        unitOfMeasureId: { type: string }
+        responsibleUserId: { type: string }
+        occurredAt: { type: string, format: date-time }
+        notes: { type: string, nullable: true }
+        source:
+          type: object
+          nullable: true
+          properties:
+            type: { type: string, enum: [PURCHASE_ORDER, SALE, TRANSFER] }
+            id: { type: string }
+
+    InventoryAdjustmentRequest:
+      type: object
+      required: [branchId, productId, direction, quantity, notes]
+      properties:
+        branchId: { type: string }
+        productId: { type: string }
+        unitOfMeasureId: { type: string }
+        direction: { type: string, enum: [INGRESO, RETIRO] }
+        reason: { type: string, enum: [DEVOLUCION, AJUSTE_INGRESO, MERMA, AJUSTE_RETIRO] }
+        quantity: { type: number, exclusiveMinimum: true, minimum: 0 }
+        notes: { type: string, minLength: 1 }
+
+    StockAlert:
+      type: object
+      properties:
+        id: { type: string }
+        inventoryId: { type: string }
+        productId: { type: string }
+        branchId: { type: string }
+        status: { type: string, enum: [ACTIVE, RESOLVED] }
+        triggeredAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+
+    PurchaseOrderCreateRequest:
+      type: object
+      required: [supplierId, branchId, items]
+      properties:
+        supplierId: { type: string }
+        branchId: { type: string }
+        paymentTerm: { type: string }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, quantityOrdered, unitPrice]
+            properties:
+              productId: { type: string }
+              unitOfMeasureId: { type: string }
+              quantityOrdered: { type: number, exclusiveMinimum: true, minimum: 0 }
+              unitPrice: { type: number, exclusiveMinimum: true, minimum: 0 }
+              discountPercentage: { type: number, minimum: 0, maximum: 100 }
+
+    PurchaseOrder:
+      type: object
+      properties:
+        id: { type: string }
+        orderNumber: { type: string }
+        supplierId: { type: string }
+        branchId: { type: string }
+        status: { type: string, enum: [CREATED, PARTIALLY_RECEIVED, RECEIVED, CANCELLED] }
+        orderDate: { type: string, format: date-time }
+        paymentTerm: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              productId: { type: string }
+              quantityOrdered: { type: number }
+              quantityReceived: { type: number }
+              unitPrice: { type: number }
+              discountPercentage: { type: number }
+
+    PurchaseReceiptRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [purchaseOrderItemId, quantityReceived, unitPrice]
+            properties:
+              purchaseOrderItemId: { type: string }
+              quantityReceived: { type: number, exclusiveMinimum: true, minimum: 0 }
+              unitPrice: { type: number, exclusiveMinimum: true, minimum: 0 }
+
+    PurchaseReceiptResponse:
+      type: object
+      properties:
+        purchaseOrderId: { type: string }
+        status: { type: string, enum: [CREATED, PARTIALLY_RECEIVED, RECEIVED, CANCELLED] }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              purchaseOrderItemId: { type: string }
+              quantityOrdered: { type: number }
+              quantityReceived: { type: number }
+              pending: { type: number }
+        inventoryUpdates:
+          type: array
+          items:
+            type: object
+            properties:
+              productId: { type: string }
+              branchId: { type: string }
+              quantityOnHand: { type: number }
+              averageUnitCost: { type: number }
+
+    SaleCreateRequest:
+      type: object
+      required: [branchId, items]
+      properties:
+        branchId: { type: string }
+        priceListId: { type: string }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, quantity]
+            properties:
+              productId: { type: string }
+              unitOfMeasureId: { type: string }
+              quantity: { type: number, exclusiveMinimum: true, minimum: 0 }
+              discountPercentage: { type: number, minimum: 0, maximum: 100 }
+
+    Sale:
+      type: object
+      properties:
+        id: { type: string }
+        saleNumber: { type: string }
+        branchId: { type: string }
+        soldByUserId: { type: string }
+        status: { type: string, enum: [CONFIRMED, VOIDED] }
+        saleDate: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productId: { type: string }
+              quantity: { type: number }
+              unitOfMeasureId: { type: string }
+              unitPrice: { type: number }
+              discountPercentage: { type: number }
+              lineTotal: { type: number }
+        subtotal: { type: number }
+        discountTotal: { type: number }
+        total: { type: number }
+        createdAt: { type: string, format: date-time }
+
+    TransferCreateRequest:
+      type: object
+      required: [originBranchId, destinationBranchId, items]
+      properties:
+        originBranchId: { type: string }
+        destinationBranchId: { type: string }
+        urgency: { type: boolean, default: false }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, quantityRequested]
+            properties:
+              productId: { type: string }
+              quantityRequested: { type: number, exclusiveMinimum: true, minimum: 0 }
+
+    TransferApproveRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [transferItemId, quantityApproved]
+            properties:
+              transferItemId: { type: string }
+              quantityApproved: { type: number, exclusiveMinimum: true, minimum: 0 }
+
+    TransferDispatchRequest:
+      type: object
+      required: [items]
+      properties:
+        carrierName: { type: string }
+        estimatedArrivalDate: { type: string, format: date }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [transferItemId, quantityShipped]
+            properties:
+              transferItemId: { type: string }
+              quantityShipped: { type: number, exclusiveMinimum: true, minimum: 0 }
+
+    TransferReceiveRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [transferItemId, quantityReceived]
+            properties:
+              transferItemId: { type: string }
+              quantityReceived: { type: number, minimum: 0 }
+
+    DiscrepancyTreatmentRequest:
+      type: object
+      required: [treatment]
+      properties:
+        treatment: { type: string, enum: [REENVIO, AJUSTE, RECLAMACION] }
+        notes: { type: string }
+
+    Transfer:
+      type: object
+      properties:
+        id: { type: string }
+        transferNumber: { type: string }
+        status:
+          type: string
+          enum: [REQUESTED, APPROVED, REJECTED, IN_TRANSIT, RECEIVED_COMPLETE, RECEIVED_PARTIAL, CLOSED]
+        originBranchId: { type: string }
+        destinationBranchId: { type: string }
+        routeId: { type: string, nullable: true }
+        urgency: { type: boolean }
+        carrierName: { type: string, nullable: true }
+        estimatedArrivalDate: { type: string, format: date, nullable: true }
+        requestedByUserId: { type: string }
+        requestedAt: { type: string, format: date-time }
+        dispatchedAt: { type: string, format: date-time, nullable: true }
+        receivedAt: { type: string, format: date-time, nullable: true }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              productId: { type: string }
+              quantityRequested: { type: number }
+              quantityApproved: { type: number, nullable: true }
+              quantityShipped: { type: number, nullable: true }
+              quantityReceived: { type: number, nullable: true }
+              quantityMissing: { type: number, nullable: true }
+              discrepancyTreatment: { type: string, enum: [REENVIO, AJUSTE, RECLAMACION], nullable: true }
+              followUpTransferId: { type: string, nullable: true }

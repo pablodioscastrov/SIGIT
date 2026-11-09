@@ -1,0 +1,18 @@
+# Perfil activo dentro de Docker Compose (host de Postgres = nombre del servicio, no localhost).
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:inventario}
+    username: ${DB_USER:inventario}
+    password: ${DB_PASSWORD:inventario}
+
+logging:
+  level:
+    root: INFO
+
+# En Docker Compose Azurite corre como servicio "azurite" en el puerto 10000.
+# La connection string apunta al host del servicio dentro de la red de compose.
+app:
+  datalake:
+    enabled: ${DATALAKE_ENABLED:true}
+    connection-string: ${DATALAKE_CONNECTION_STRING:DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tiqp;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
+    container-name: ${DATALAKE_CONTAINER:datalake-sigit}

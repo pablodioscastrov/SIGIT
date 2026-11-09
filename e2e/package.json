@@ -1,0 +1,14 @@
+{
+  "name": "inventario-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Pruebas E2E (Playwright) de los flujos de alto valor de docs/TEST_STRATEGY.md, contra el stack real levantado con docker compose up.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

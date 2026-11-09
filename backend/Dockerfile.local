@@ -1,0 +1,13 @@
+# Dockerfile.local — para desarrollo local cuando el JAR ya fue compilado en el host.
+# Uso: docker build -f Dockerfile.local -t backend-local .
+# Ventaja: no descarga dependencias de Maven dentro del contenedor.
+FROM eclipse-temurin:21-jre-alpine
+
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+
+WORKDIR /app
+COPY target/backend-0.1.0-SNAPSHOT.jar app.jar
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]

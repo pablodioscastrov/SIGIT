@@ -1,0 +1,11 @@
+# Perfil para desarrollo local (backend corriendo fuera de Docker, Postgres accesible en localhost).
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:inventario}
+    username: ${DB_USER:inventario}
+    password: ${DB_PASSWORD:inventario}
+
+logging:
+  level:
+    root: INFO
+    com.inventario.multisucursal: DEBUG

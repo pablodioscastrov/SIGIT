@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.5</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.inventario.multisucursal</groupId>
+  <artifactId>backend</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>backend</name>
+  <description>
+    Sistema de Inventario Multi-Sucursal - Backend (Java 21 + Spring Boot).
+    Esqueleto inicial: sin modulos de negocio todavia (ver docs/STATUS.md).
+  </description>
+
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+
+  <dependencies>
+    <!-- API REST (docs/ARCHITECTURE.md seccion 2: capa de entrada) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- Validacion estructural de DTOs en la capa de entrada (docs/ARCHITECTURE.md seccion 6) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- Persistencia: Spring Data JPA / Hibernate (TD-006) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+
+    <!-- Driver PostgreSQL (TD-003) -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- Migraciones de esquema versionadas: Flyway (ver docs/README de este modulo para la justificacion frente a Liquibase) -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+
+    <!-- Endpoint de health/observabilidad minima (docs/ARCHITECTURE.md seccion 8) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!--
+      Generacion de reportes exportables en Excel (.xlsx) - docs/BUSINESS_RULES.md
+      BR-056. Apache POI (Apache-2.0, sin problemas de licenciamiento) es el
+      estandar de facto en Java para esto; no hay forma razonable de generar un
+      .xlsx real sin una libreria dedicada. Solo `poi-ooxml` (formato moderno
+      .xlsx via XSSF/SXSSF) - no se necesita el formato binario legado .xls.
+    -->
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>5.2.5</version>
+    </dependency>
+
+    <!-- Spring Security + JWT + RBAC (ADR-005, TD-007, TD-008) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+
+    <!--
+      JWT propio (no un servidor OAuth2 externo, ver ADR-005 y ADR-007-style
+      justification: no hay necesidad concreta de un authorization server
+      separado para 3 roles internos de una sola organizacion). jjwt es una
+      libreria liviana solo para firmar/parsear JWT HS256, sin arrastrar todo
+      spring-boot-starter-oauth2-resource-server (que asume un modelo de
+      issuer/JWK externo que no aplica aqui).
+    -->
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-api</artifactId>
+      <version>0.12.6</version>
+    </dependency>
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-impl</artifactId>
+      <version>0.12.6</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-jackson</artifactId>
+      <version>0.12.6</version>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!--
+      Azure Blob Storage SDK — usado por el módulo datalake para persistir
+      eventos operativos en Azurite (local) o en Azure Data Lake Storage Gen2
+      (producción). La versión queda fija para garantizar reproducibilidad;
+      no hay spring-cloud-azure en juego porque no se necesita integración
+      auto-configurada, solo el cliente de blobs.
+    -->
+    <dependency>
+      <groupId>com.azure</groupId>
+      <artifactId>azure-storage-blob</artifactId>
+      <version>12.25.1</version>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!--
+      H2 solo para el smoke test de este esqueleto (arranque de contexto + /actuator/health),
+      evitando depender de una instancia PostgreSQL real para un test que no ejercita
+      ninguna regla de negocio. Las pruebas de integracion de los modulos de negocio
+      (cuando existan constraints, locking, etc. especificos de PostgreSQL) deben usar
+      Testcontainers con PostgreSQL real, no H2 - ver docs/BUSINESS_RULES.md / docs/CRITICAL_FLOWS.md.
+    -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!--
+      Testcontainers con PostgreSQL real: arranque de contexto + migraciones Flyway
+      (FlywayMigrationIntegrationTest) y las variantes "...PostgresTest" de las pruebas
+      de concurrencia (InventoryConcurrencyPostgresTest, SaleConcurrencyPostgresTest,
+      TransferConcurrencyPostgresTest - docs/TEST_STRATEGY.md, seccion 4). Justificacion:
+      Flyway y el comportamiento real de bloqueo/aborto de transaccion son especificos
+      de PostgreSQL - probarlos contra H2 no demostraria nada real. Todas usan
+      "disabledWithoutDocker = true": se omiten con gracia sin Docker, el resto de la
+      suite no depende de el. La version queda gestionada por el BOM heredado de
+      spring-boot-starter-parent.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
