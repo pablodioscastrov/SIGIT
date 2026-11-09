@@ -11,7 +11,7 @@ COPY src ./src
 RUN mvn -B -q package -DskipTests
 
 # ---- Etapa de runtime ----
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
